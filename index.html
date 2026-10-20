@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>POS Susu</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<style>
+:root{--bg:#f6f4ef;--card:#fff;--tx:#1f2a2e;--mut:#6b7780;--ac:#1f7a8c;--ac2:#e8f3f5;--bd:#e3dfd6;--wr:#c0392b;--ok:#2e8b57;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root{--bg:#141a1c;--card:#1d2528;--tx:#e8eef0;--mut:#8f9ea5;--ac:#4fb3c6;--ac2:#1f3238;--bd:#2c383c;--wr:#ec7063;--ok:#58c58a;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.45}
+.w{max-width:960px;margin:0 auto;padding:16px}
+h1{font-size:20px;margin:4px 0 2px}.sub{color:var(--mut);font-size:13px;margin-bottom:14px}
+.top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+nav{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}
+nav button{flex:1;min-width:110px;padding:10px;border:1px solid var(--bd);background:var(--card);color:var(--tx);border-radius:10px;font-weight:600;cursor:pointer}
+nav button.on{background:var(--ac);color:#fff;border-color:var(--ac)}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px;margin-bottom:14px}
+.card h2{font-size:15px;margin:0 0 12px}
+.g{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+label{font-size:12px;color:var(--mut);display:block;margin-bottom:3px}
+input,select{width:100%;padding:9px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--tx);font-size:16px}
+.btn{margin-top:12px;padding:11px 18px;border:0;border-radius:8px;background:var(--ac);color:#fff;font-weight:600;font-size:15px;cursor:pointer}
+.btn:disabled{opacity:.6}
+.btn.s{margin:0;padding:5px 9px;font-size:12px;background:transparent;color:var(--wr);border:1px solid var(--bd)}
+.btn.g2{margin:0;padding:6px 10px;font-size:12px;background:transparent;color:var(--mut);border:1px solid var(--bd)}
+.stat{background:var(--ac2);border-radius:10px;padding:12px}.stat b{display:block;font-size:19px}.stat span{font-size:12px;color:var(--mut)}
+.pv{margin-top:12px;padding:12px;border-radius:10px;background:var(--ac2)}.pv b{font-size:20px}
+.tb{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px;min-width:460px}
+th,td{padding:8px;text-align:left;border-bottom:1px solid var(--bd)}th{font-size:12px;color:var(--mut);font-weight:600}
+.r{text-align:right}
+.tag{font-size:11px;padding:2px 7px;border-radius:99px;background:var(--ac2)}.tag.w2{color:var(--wr);font-weight:600}
+.msg{margin-top:10px;font-size:14px;min-height:20px}.err{color:var(--wr)}.okm{color:var(--ok)}
+.bars{display:flex;align-items:flex-end;gap:5px;height:140px;padding-top:8px}
+.bc{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;font-size:10px;color:var(--mut)}
+.bar{width:100%;background:var(--ac);border-radius:4px 4px 0 0;min-height:2px}
+.em{color:var(--mut);font-size:14px;padding:8px 0}
+#login{max-width:360px;margin:40px auto}
+</style>
+</head>
+<body>
+<div class="w">
+
+<div id="login" class="card" hidden>
+<h1>🥛 POS Susu</h1><div class="sub">Masuk untuk melanjutkan</div>
+<label>Email</label><input id="lEmail" type="email" autocomplete="username">
+<div style="height:10px"></div>
+<label>Password</label><input id="lPass" type="password" autocomplete="current-password">
+<button class="btn" id="lBtn">Masuk</button><div class="msg err" id="lMsg"></div>
+</div>
+
+<div id="app" hidden>
+<div class="top"><div><h1>🥛 POS Penjualan Susu</h1><div class="sub">Stok dari kantor (tanpa modal), pendapatan = keuntungan bersih</div></div>
+<div style="display:flex;gap:6px"><button class="btn g2" id="rf">⟳ Muat ulang</button><button class="btn g2" id="lo">Keluar</button></div></div>
+<nav>
+<button data-t="dash" class="on">Dashboard</button><button data-t="in">Penerimaan Stok</button><button data-t="out">Pengeluaran / Jual</button><button data-t="stk">Stok</button>
+</nav>
+
+<section id="dash">
+<div class="card"><div class="g" id="stats"></div></div>
+<div class="card"><h2>Penjualan 14 hari terakhir</h2><div class="bars" id="bars"></div></div>
+<div class="card"><h2>Ringkasan harian</h2><div class="tb" id="daily"></div></div>
+</section>
+
+<section id="in" hidden>
+<div class="card"><h2>Terima stok susu</h2>
+<div class="g">
+<div><label>Nama item</label><input id="iItem" list="dl" placeholder="mis. Susu UHT Plain"><datalist id="dl"></datalist></div>
+<div><label>Qty</label><input id="iQty" type="number" min="1" step="1" inputmode="numeric"></div>
+<div><label>UoM</label><input value="Botol" disabled></div>
+<div><label>Expired date</label><input id="iExp" type="date"></div>
+<div><label>Harga jual (Rp per botol)</label><input id="iPrice" type="number" min="0" step="any" inputmode="decimal"></div>
+</div>
+<div class="pv" id="iPv" hidden></div>
+<button class="btn" id="iBtn">Simpan penerimaan</button><div class="msg" id="iMsg"></div></div>
+<div class="card"><h2>Riwayat penerimaan</h2><div class="tb" id="inHist"></div></div>
+</section>
+
+<section id="out" hidden>
+<div class="card"><h2>Jual / keluarkan stok</h2>
+<div class="g">
+<div><label>Item</label><select id="oItem"></select></div>
+<div><label>Qty</label><input id="oQty" type="number" min="1" step="1" inputmode="numeric"></div>
+<div><label>UoM</label><input value="Botol" disabled></div>
+</div>
+<div class="pv" id="oPv">Pilih item dan isi qty.</div>
+<button class="btn" id="oBtn">Catat penjualan</button><div class="msg" id="oMsg"></div></div>
+<div class="card"><h2>Transaksi terakhir</h2><div class="tb" id="outHist"></div></div>
+</section>
+
+<section id="stk" hidden>
+<div class="card"><h2>Stok saat ini (urut expired terdekat)</h2><div class="tb" id="stkTb"></div></div>
+</section>
+</div>
+</div>
+
+<script>
+/* ====== ISI DUA BARIS INI (lihat README.md) ====== */
+const SUPABASE_URL="https://yfclxxzqejuhoytnsbap.supabase.co/rest/v1/";
+const SUPABASE_KEY="sb_publishable_-crQ9Pp7PTRTiW_MbKpbAg_o80Eq3fQ";
+/* ================================================= */
+
+const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+const $=s=>document.querySelector(s);
+let B=[],S=[],DS=[];
+const rp=n=>"Rp "+Math.round(n).toLocaleString("id-ID");
+const vol=n=>Math.round(n).toLocaleString("id-ID")+" botol";
+const iso=d=>{const x=new Date(d);return x.getFullYear()+"-"+String(x.getMonth()+1).padStart(2,"0")+"-"+String(x.getDate()).padStart(2,"0")};
+const today=()=>iso(new Date());
+const fd=s=>new Date(s+"T00:00").toLocaleDateString("id-ID",{day:"numeric",month:"short",year:"numeric"});
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const live=b=>b.remain>0&&b.exp>=today();
+
+/* ---- auth ---- */
+async function boot(){
+  const{data}=await sb.auth.getSession();
+  if(data.session){$("#login").hidden=true;$("#app").hidden=false;$("#iExp").min=today();await load()}
+  else{$("#login").hidden=false;$("#app").hidden=true}
+}
+$("#lBtn").onclick=async()=>{
+  $("#lBtn").disabled=true;$("#lMsg").textContent="";
+  const{error}=await sb.auth.signInWithPassword({email:$("#lEmail").value.trim(),password:$("#lPass").value});
+  $("#lBtn").disabled=false;
+  if(error)$("#lMsg").textContent="Login gagal: "+error.message;else boot();
+};
+$("#lo").onclick=async()=>{await sb.auth.signOut();boot()};
+$("#rf").onclick=()=>load();
+document.addEventListener("visibilitychange",()=>{if(!document.hidden&&!$("#app").hidden)load()});
+
+/* ---- data ---- */
+async function load(){
+  const[b,s,d]=await Promise.all([
+    sb.from("batches").select("*").order("exp"),
+    sb.from("sales").select("*").order("created_at",{ascending:false}).limit(20),
+    sb.from("daily_sales").select("*").order("sold_on",{ascending:false})]);
+  const e=b.error||s.error||d.error;
+  if(e){alert("Gagal memuat data: "+e.message);return}
+  B=b.data;S=s.data;DS=d.data;render();
+}
+
+document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{
+  document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("on",x===b));
+  ["dash","in","out","stk"].forEach(id=>$("#"+id).hidden=id!==b.dataset.t);
+});
+
+/* ---- penerimaan ---- */
+function inPreview(){
+  const q=+$("#iQty").value,p=+$("#iPrice").value,pv=$("#iPv");
+  if(q>0&&p>0){pv.hidden=false;pv.innerHTML=`Total ${vol(q)} · ${rp(p)}/botol · potensi pendapatan <b>${rp(p*q)}</b>`}else pv.hidden=true;
+}
+["iQty","iPrice"].forEach(id=>$("#"+id).addEventListener("input",inPreview));
+$("#iBtn").onclick=async()=>{
+  const item=$("#iItem").value.trim(),q=+$("#iQty").value,p=+$("#iPrice").value,exp=$("#iExp").value,m=$("#iMsg");
+  m.className="msg err";
+  if(!item)return m.textContent="Nama item wajib diisi.";
+  if(!(q>0)||!Number.isInteger(q))return m.textContent="Qty harus bilangan bulat lebih dari 0.";
+  if(!exp)return m.textContent="Expired date wajib diisi.";
+  if(exp<today())return m.textContent="Tanggal expired sudah lewat.";
+  if(!(p>0))return m.textContent="Harga jual wajib diisi.";
+  $("#iBtn").disabled=true;
+  const{error}=await sb.from("batches").insert({item,qty:q,remain:q,price:p,exp});
+  $("#iBtn").disabled=false;
+  if(error)return m.textContent="Gagal menyimpan: "+error.message;
+  ["iItem","iQty","iPrice","iExp"].forEach(id=>$("#"+id).value="");$("#iPv").hidden=true;
+  m.className="msg okm";m.textContent=`Tersimpan: ${item} ${vol(q)}.`;load();
+};
+
+/* ---- pengeluaran ---- */
+const itemsLive=()=>[...new Set(B.filter(live).map(b=>b.item))];
+function calc(item,q){
+  const bs=B.filter(b=>live(b)&&b.item===item).sort((a,b)=>a.exp.localeCompare(b.exp)||a.created_at.localeCompare(b.created_at));
+  const avail=bs.reduce((s,b)=>s+b.remain,0);let need=q,total=0;
+  for(const b of bs){if(need<=0)break;const t=Math.min(b.remain,need);total+=t*b.price;need-=t}
+  return{avail,total,ok:q<=avail};
+}
+function outPreview(){
+  const item=$("#oItem").value,q=+$("#oQty").value,pv=$("#oPv");
+  if(!item)return pv.textContent="Belum ada stok tersedia.";
+  if(!(q>0))return pv.innerHTML=`Stok tersedia: <b>${vol(calc(item,0).avail)}</b>. Isi qty untuk melihat harga.`;
+  const c=calc(item,q);
+  pv.innerHTML=c.ok?`Harga jual otomatis: <b>${rp(c.total)}</b> <span style="color:var(--mut);font-size:13px">(sisa stok ${vol(c.avail-q)})</span>`:`<span class="err">Stok tidak cukup. Tersedia ${vol(c.avail)}.</span>`;
+}
+["oItem","oQty"].forEach(id=>$("#"+id).addEventListener("input",outPreview));
+$("#oBtn").onclick=async()=>{
+  const item=$("#oItem").value,q=+$("#oQty").value,m=$("#oMsg");m.className="msg err";
+  if(!item)return m.textContent="Tidak ada item tersedia.";
+  if(!(q>0)||!Number.isInteger(q))return m.textContent="Qty harus bilangan bulat lebih dari 0.";
+  $("#oBtn").disabled=true;
+  const{data,error}=await sb.rpc("jual",{p_item:item,p_qty:q});
+  $("#oBtn").disabled=false;
+  if(error){m.textContent=error.message;return load()}
+  $("#oQty").value="";m.className="msg okm";m.textContent=`Terjual ${vol(q)} ${item} = ${rp(data)}`;load();
+};
+async function delBatch(id){if(!confirm("Hapus batch stok ini?"))return;const{error}=await sb.from("batches").delete().eq("id",id);if(error)alert(error.message);load()}
+window.delBatch=delBatch;
+
+/* ---- render ---- */
+const tbl=(h,rows,empty)=>rows.length?`<table><thead><tr>${h.map(x=>`<th class="${x[0]==="#"?"r":""}">${x.replace("#","")}</th>`).join("")}</tr></thead><tbody>${rows.join("")}</tbody></table>`:`<div class="em">${empty}</div>`;
+function render(){
+  $("#dl").innerHTML=[...new Set(B.map(b=>b.item))].map(i=>`<option value="${esc(i)}">`).join("");
+  const cur=$("#oItem").value,its=itemsLive();
+  $("#oItem").innerHTML=its.length?its.map(i=>`<option ${i===cur?"selected":""}>${esc(i)}</option>`).join(""):`<option value="">— tidak ada stok —</option>`;
+  outPreview();
+  const t=today(),td=DS.find(x=>x.sold_on===t)||{botol:0,pendapatan:0};
+  const totB=DS.reduce((s,x)=>s+x.botol,0),totR=DS.reduce((s,x)=>s+Number(x.pendapatan),0);
+  const stock=B.filter(live).reduce((s,b)=>s+b.remain,0);
+  $("#stats").innerHTML=[["Pendapatan hari ini",rp(td.pendapatan)],["Botol terjual hari ini",vol(td.botol)],["Total pendapatan",rp(totR)],["Total botol terjual",vol(totB)],["Sisa stok (belum expired)",vol(stock)]].map(([l,v])=>`<div class="stat"><b>${v}</b><span>${l}</span></div>`).join("");
+  const days=[];for(let i=13;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);days.push(iso(d))}
+  const val=d=>Number((DS.find(x=>x.sold_on===d)||{}).pendapatan||0),mx=Math.max(1,...days.map(val));
+  $("#bars").innerHTML=days.map(d=>`<div class="bc" title="${fd(d)}: ${rp(val(d))}"><div class="bar" style="height:${val(d)/mx*100}%"></div>${d.slice(8)}</div>`).join("");
+  $("#daily").innerHTML=tbl(["Tanggal","#Transaksi","#Botol","#Pendapatan"],DS.map(x=>`<tr><td>${fd(x.sold_on)}${x.sold_on===t?' <span class="tag">hari ini</span>':""}</td><td class="r">${x.trx}</td><td class="r">${vol(x.botol)}</td><td class="r"><b>${rp(x.pendapatan)}</b></td></tr>`),"Belum ada penjualan.");
+  $("#inHist").innerHTML=tbl(["Tgl terima","Item","#Qty","Expired","#Harga/botol"],[...B].sort((a,b)=>b.created_at.localeCompare(a.created_at)).slice(0,20).map(b=>`<tr><td>${fd(b.received_on)}</td><td>${esc(b.item)}</td><td class="r">${vol(b.qty)}</td><td>${fd(b.exp)}</td><td class="r">${rp(b.price)}</td></tr>`),"Belum ada penerimaan.");
+  $("#outHist").innerHTML=tbl(["Waktu","Item","#Botol","#Harga"],S.map(s=>`<tr><td>${fd(s.sold_on)} ${new Date(s.created_at).toLocaleTimeString("id-ID",{hour:"2-digit",minute:"2-digit"})}</td><td>${esc(s.item)}</td><td class="r">${vol(s.qty)}</td><td class="r">${rp(s.total)}</td></tr>`),"Belum ada transaksi.");
+  const soon=new Date();soon.setDate(soon.getDate()+7);const ss=iso(soon);
+  $("#stkTb").innerHTML=tbl(["Item","#Sisa","Expired","#Harga/botol","Status",""],B.map(b=>{
+    const st=b.remain<=0?'<span class="tag">habis</span>':b.exp<t?'<span class="tag w2">expired</span>':b.exp<=ss?'<span class="tag w2">segera expired</span>':'<span class="tag">aman</span>';
+    return `<tr><td>${esc(b.item)}</td><td class="r">${vol(b.remain)}</td><td>${fd(b.exp)}</td><td class="r">${rp(b.price)}</td><td>${st}</td><td class="r"><button class="btn s" onclick="delBatch('${b.id}')">Hapus</button></td></tr>`}),"Belum ada stok.");
+}
+boot();
+</script>
+</body>
+</html>
