@@ -38,6 +38,11 @@ th,td{padding:8px;text-align:left;border-bottom:1px solid var(--bd)}th{font-size
 .bar{width:100%;background:var(--ac);border-radius:4px 4px 0 0;min-height:2px}
 .em{color:var(--mut);font-size:14px;padding:8px 0}
 #login{max-width:360px;margin:40px auto}
+.ctl{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}.chips .btn{margin:0}
+#chartWrap{position:relative}#chart svg{display:block;width:100%}
+.tip{position:absolute;pointer-events:none;background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:6px 9px;font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,.25);white-space:nowrap;z-index:2}
+.axis{fill:var(--mut);font-size:10px}
 </style>
 </head>
 <body>
@@ -60,8 +65,16 @@ th,td{padding:8px;text-align:left;border-bottom:1px solid var(--bd)}th{font-size
 
 <section id="dash">
 <div class="card"><div class="g" id="stats"></div></div>
-<div class="card"><h2>Penjualan 14 hari terakhir</h2><div class="bars" id="bars"></div></div>
-<div class="card"><h2>Ringkasan harian</h2><div class="tb" id="daily"></div></div>
+<div class="card"><h2>Grafik penjualan</h2>
+<div class="ctl">
+<div><label>Dari</label><input id="cFrom" type="date"></div>
+<div><label>Sampai</label><input id="cTo" type="date"></div>
+<div><label>Tampilkan</label><select id="cMet"><option value="rev">Pendapatan (Rp)</option><option value="qty">Botol terjual</option></select></div>
+</div>
+<div class="chips"><button class="btn g2" data-p="7">7 hari</button><button class="btn g2" data-p="14">14 hari</button><button class="btn g2" data-p="30">30 hari</button><button class="btn g2" data-p="m">Bulan ini</button></div>
+<div class="sub" id="cTot"></div>
+<div id="chartWrap"><div id="chart"></div><div class="tip" id="tip" hidden></div></div></div>
+<div class="card"><h2>Ringkasan harian (sesuai periode grafik)</h2><div class="tb" id="daily"></div></div>
 </section>
 
 <section id="in" hidden>
@@ -70,7 +83,7 @@ th,td{padding:8px;text-align:left;border-bottom:1px solid var(--bd)}th{font-size
 <div><label>Nama item</label><input id="iItem" list="dl" placeholder="mis. Susu UHT Plain"><datalist id="dl"></datalist></div>
 <div><label>Qty</label><input id="iQty" type="number" min="1" step="1" inputmode="numeric"></div>
 <div><label>UoM</label><input value="Botol" disabled></div>
-<div><label>Expired date</label><input id="iExp" type="date"></div>
+<div><label>Tanggal transaksi</label><input id="iDate" type="date"></div>
 <div><label>Harga jual (Rp per botol)</label><input id="iPrice" type="number" min="0" step="any" inputmode="decimal"></div>
 </div>
 <div class="pv" id="iPv" hidden></div>
@@ -84,6 +97,7 @@ th,td{padding:8px;text-align:left;border-bottom:1px solid var(--bd)}th{font-size
 <div><label>Item</label><select id="oItem"></select></div>
 <div><label>Qty</label><input id="oQty" type="number" min="1" step="1" inputmode="numeric"></div>
 <div><label>UoM</label><input value="Botol" disabled></div>
+<div><label>Tanggal transaksi</label><input id="oDate" type="date"></div>
 </div>
 <div class="pv" id="oPv">Pilih item dan isi qty.</div>
 <button class="btn" id="oBtn">Catat penjualan</button><div class="msg" id="oMsg"></div></div>
@@ -91,15 +105,15 @@ th,td{padding:8px;text-align:left;border-bottom:1px solid var(--bd)}th{font-size
 </section>
 
 <section id="stk" hidden>
-<div class="card"><h2>Stok saat ini (urut expired terdekat)</h2><div class="tb" id="stkTb"></div></div>
+<div class="card"><h2>Stok saat ini (urut tanggal terima)</h2><div class="tb" id="stkTb"></div></div>
 </section>
 </div>
 </div>
 
 <script>
 /* ====== ISI DUA BARIS INI (lihat README.md) ====== */
-const SUPABASE_URL="https://yfclxxzqejuhoytnsbap.supabase.co";
-const SUPABASE_KEY="sb_publishable_-crQ9Pp7PTRTiW_MbKpbAg_o80Eq3fQ";
+const SUPABASE_URL="ISI_PROJECT_URL";
+const SUPABASE_KEY="ISI_ANON_PUBLIC_KEY";
 /* ================================================= */
 
 const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
@@ -111,12 +125,12 @@ const iso=d=>{const x=new Date(d);return x.getFullYear()+"-"+String(x.getMonth()
 const today=()=>iso(new Date());
 const fd=s=>new Date(s+"T00:00").toLocaleDateString("id-ID",{day:"numeric",month:"short",year:"numeric"});
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-const live=b=>b.remain>0&&b.exp>=today();
+const live=b=>b.remain>0;
 
 /* ---- auth ---- */
 async function boot(){
   const{data}=await sb.auth.getSession();
-  if(data.session){$("#login").hidden=true;$("#app").hidden=false;$("#iExp").min=today();await load()}
+  if(data.session){$("#login").hidden=true;$("#app").hidden=false;$("#iDate").max=$("#oDate").max=today();if(!$("#iDate").value)$("#iDate").value=$("#oDate").value=today();setPeriod(addD(today(),-13),today());await load()}
   else{$("#login").hidden=false;$("#app").hidden=true}
 }
 $("#lBtn").onclick=async()=>{
@@ -132,7 +146,7 @@ document.addEventListener("visibilitychange",()=>{if(!document.hidden&&!$("#app"
 /* ---- data ---- */
 async function load(){
   const[b,s,d]=await Promise.all([
-    sb.from("batches").select("*").order("exp"),
+    sb.from("batches").select("*").order("received_on"),
     sb.from("sales").select("*").order("created_at",{ascending:false}).limit(20),
     sb.from("daily_sales").select("*").order("sold_on",{ascending:false})]);
   const e=b.error||s.error||d.error;
@@ -142,7 +156,7 @@ async function load(){
 
 document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{
   document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("on",x===b));
-  ["dash","in","out","stk"].forEach(id=>$("#"+id).hidden=id!==b.dataset.t);
+  ["dash","in","out","stk"].forEach(id=>$("#"+id).hidden=id!==b.dataset.t);if(b.dataset.t==="dash")drawChart();
 });
 
 /* ---- penerimaan ---- */
@@ -152,46 +166,48 @@ function inPreview(){
 }
 ["iQty","iPrice"].forEach(id=>$("#"+id).addEventListener("input",inPreview));
 $("#iBtn").onclick=async()=>{
-  const item=$("#iItem").value.trim(),q=+$("#iQty").value,p=+$("#iPrice").value,exp=$("#iExp").value,m=$("#iMsg");
+  const item=$("#iItem").value.trim(),q=+$("#iQty").value,p=+$("#iPrice").value,dt=$("#iDate").value,m=$("#iMsg");
   m.className="msg err";
   if(!item)return m.textContent="Nama item wajib diisi.";
   if(!(q>0)||!Number.isInteger(q))return m.textContent="Qty harus bilangan bulat lebih dari 0.";
-  if(!exp)return m.textContent="Expired date wajib diisi.";
-  if(exp<today())return m.textContent="Tanggal expired sudah lewat.";
+  if(!dt)return m.textContent="Tanggal transaksi wajib diisi.";
+  if(dt>today())return m.textContent="Tanggal tidak boleh di masa depan.";
   if(!(p>0))return m.textContent="Harga jual wajib diisi.";
   $("#iBtn").disabled=true;
-  const{error}=await sb.from("batches").insert({item,qty:q,remain:q,price:p,exp});
+  const{error}=await sb.from("batches").insert({item,qty:q,remain:q,price:p,received_on:dt});
   $("#iBtn").disabled=false;
   if(error)return m.textContent="Gagal menyimpan: "+error.message;
-  ["iItem","iQty","iPrice","iExp"].forEach(id=>$("#"+id).value="");$("#iPv").hidden=true;
-  m.className="msg okm";m.textContent=`Tersimpan: ${item} ${vol(q)}.`;load();
+  ["iItem","iQty","iPrice"].forEach(id=>$("#"+id).value="");$("#iPv").hidden=true;
+  m.className="msg okm";m.textContent=`Tersimpan: ${item} ${vol(q)} (tgl ${fd(dt)}).`;load();
 };
 
 /* ---- pengeluaran ---- */
 const itemsLive=()=>[...new Set(B.filter(live).map(b=>b.item))];
-function calc(item,q){
-  const bs=B.filter(b=>live(b)&&b.item===item).sort((a,b)=>a.exp.localeCompare(b.exp)||a.created_at.localeCompare(b.created_at));
+function calc(item,q,dt){
+  const bs=B.filter(b=>live(b)&&b.item===item&&b.received_on<=dt).sort((a,b)=>a.received_on.localeCompare(b.received_on)||a.created_at.localeCompare(b.created_at));
   const avail=bs.reduce((s,b)=>s+b.remain,0);let need=q,total=0;
   for(const b of bs){if(need<=0)break;const t=Math.min(b.remain,need);total+=t*b.price;need-=t}
   return{avail,total,ok:q<=avail};
 }
 function outPreview(){
-  const item=$("#oItem").value,q=+$("#oQty").value,pv=$("#oPv");
+  const item=$("#oItem").value,q=+$("#oQty").value,pv=$("#oPv"),dt=$("#oDate").value||today();
   if(!item)return pv.textContent="Belum ada stok tersedia.";
-  if(!(q>0))return pv.innerHTML=`Stok tersedia: <b>${vol(calc(item,0).avail)}</b>. Isi qty untuk melihat harga.`;
-  const c=calc(item,q);
+  if(!(q>0))return pv.innerHTML=`Stok tersedia: <b>${vol(calc(item,0,dt).avail)}</b>. Isi qty untuk melihat harga.`;
+  const c=calc(item,q,dt);
   pv.innerHTML=c.ok?`Harga jual otomatis: <b>${rp(c.total)}</b> <span style="color:var(--mut);font-size:13px">(sisa stok ${vol(c.avail-q)})</span>`:`<span class="err">Stok tidak cukup. Tersedia ${vol(c.avail)}.</span>`;
 }
-["oItem","oQty"].forEach(id=>$("#"+id).addEventListener("input",outPreview));
+["oItem","oQty","oDate"].forEach(id=>$("#"+id).addEventListener("input",outPreview));
 $("#oBtn").onclick=async()=>{
-  const item=$("#oItem").value,q=+$("#oQty").value,m=$("#oMsg");m.className="msg err";
+  const item=$("#oItem").value,q=+$("#oQty").value,dt=$("#oDate").value,m=$("#oMsg");m.className="msg err";
+  if(!dt)return m.textContent="Tanggal transaksi wajib diisi.";
+  if(dt>today())return m.textContent="Tanggal tidak boleh di masa depan.";
   if(!item)return m.textContent="Tidak ada item tersedia.";
   if(!(q>0)||!Number.isInteger(q))return m.textContent="Qty harus bilangan bulat lebih dari 0.";
   $("#oBtn").disabled=true;
-  const{data,error}=await sb.rpc("jual",{p_item:item,p_qty:q});
+  const{data,error}=await sb.rpc("jual",{p_item:item,p_qty:q,p_date:dt});
   $("#oBtn").disabled=false;
   if(error){m.textContent=error.message;return load()}
-  $("#oQty").value="";m.className="msg okm";m.textContent=`Terjual ${vol(q)} ${item} = ${rp(data)}`;load();
+  $("#oQty").value="";m.className="msg okm";m.textContent=`Terjual ${vol(q)} ${item} = ${rp(data)} (tgl ${fd(dt)})`;load();
 };
 async function delBatch(id){if(!confirm("Hapus batch stok ini?"))return;const{error}=await sb.from("batches").delete().eq("id",id);if(error)alert(error.message);load()}
 window.delBatch=delBatch;
@@ -207,17 +223,63 @@ function render(){
   const totB=DS.reduce((s,x)=>s+x.botol,0),totR=DS.reduce((s,x)=>s+Number(x.pendapatan),0);
   const stock=B.filter(live).reduce((s,b)=>s+b.remain,0);
   $("#stats").innerHTML=[["Pendapatan hari ini",rp(td.pendapatan)],["Botol terjual hari ini",vol(td.botol)],["Total pendapatan",rp(totR)],["Total botol terjual",vol(totB)],["Sisa stok (belum expired)",vol(stock)]].map(([l,v])=>`<div class="stat"><b>${v}</b><span>${l}</span></div>`).join("");
-  const days=[];for(let i=13;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);days.push(iso(d))}
-  const val=d=>Number((DS.find(x=>x.sold_on===d)||{}).pendapatan||0),mx=Math.max(1,...days.map(val));
-  $("#bars").innerHTML=days.map(d=>`<div class="bc" title="${fd(d)}: ${rp(val(d))}"><div class="bar" style="height:${val(d)/mx*100}%"></div>${d.slice(8)}</div>`).join("");
-  $("#daily").innerHTML=tbl(["Tanggal","#Transaksi","#Botol","#Pendapatan"],DS.map(x=>`<tr><td>${fd(x.sold_on)}${x.sold_on===t?' <span class="tag">hari ini</span>':""}</td><td class="r">${x.trx}</td><td class="r">${vol(x.botol)}</td><td class="r"><b>${rp(x.pendapatan)}</b></td></tr>`),"Belum ada penjualan.");
-  $("#inHist").innerHTML=tbl(["Tgl terima","Item","#Qty","Expired","#Harga/botol"],[...B].sort((a,b)=>b.created_at.localeCompare(a.created_at)).slice(0,20).map(b=>`<tr><td>${fd(b.received_on)}</td><td>${esc(b.item)}</td><td class="r">${vol(b.qty)}</td><td>${fd(b.exp)}</td><td class="r">${rp(b.price)}</td></tr>`),"Belum ada penerimaan.");
+  drawChart();
+  $("#daily").innerHTML=tbl(["Tanggal","#Transaksi","#Botol","#Pendapatan"],DSP().map(x=>`<tr><td>${fd(x.sold_on)}${x.sold_on===t?' <span class="tag">hari ini</span>':""}</td><td class="r">${x.trx}</td><td class="r">${vol(x.botol)}</td><td class="r"><b>${rp(x.pendapatan)}</b></td></tr>`),"Belum ada penjualan.");
+  $("#inHist").innerHTML=tbl(["Tgl terima","Item","#Qty","#Harga/botol"],[...B].sort((a,b)=>b.created_at.localeCompare(a.created_at)).slice(0,20).map(b=>`<tr><td>${fd(b.received_on)}</td><td>${esc(b.item)}</td><td class="r">${vol(b.qty)}</td><td class="r">${rp(b.price)}</td></tr>`),"Belum ada penerimaan.");
   $("#outHist").innerHTML=tbl(["Waktu","Item","#Botol","#Harga"],S.map(s=>`<tr><td>${fd(s.sold_on)} ${new Date(s.created_at).toLocaleTimeString("id-ID",{hour:"2-digit",minute:"2-digit"})}</td><td>${esc(s.item)}</td><td class="r">${vol(s.qty)}</td><td class="r">${rp(s.total)}</td></tr>`),"Belum ada transaksi.");
-  const soon=new Date();soon.setDate(soon.getDate()+7);const ss=iso(soon);
-  $("#stkTb").innerHTML=tbl(["Item","#Sisa","Expired","#Harga/botol","Status",""],B.map(b=>{
-    const st=b.remain<=0?'<span class="tag">habis</span>':b.exp<t?'<span class="tag w2">expired</span>':b.exp<=ss?'<span class="tag w2">segera expired</span>':'<span class="tag">aman</span>';
-    return `<tr><td>${esc(b.item)}</td><td class="r">${vol(b.remain)}</td><td>${fd(b.exp)}</td><td class="r">${rp(b.price)}</td><td>${st}</td><td class="r"><button class="btn s" onclick="delBatch('${b.id}')">Hapus</button></td></tr>`}),"Belum ada stok.");
+  $("#stkTb").innerHTML=tbl(["Item","Tgl terima","#Sisa","#Harga/botol","Status",""],B.map(b=>{
+    const st=b.remain<=0?'<span class="tag">habis</span>':'<span class="tag">tersedia</span>';
+    return `<tr><td>${esc(b.item)}</td><td>${fd(b.received_on)}</td><td class="r">${vol(b.remain)}</td><td class="r">${rp(b.price)}</td><td>${st}</td><td class="r"><button class="btn s" onclick="delBatch('${b.id}')">Hapus</button></td></tr>`}),"Belum ada stok.");
 }
+/* ---- grafik area + filter periode ---- */
+let P={from:"",to:"",met:"rev"};
+const addD=(s,n)=>{const d=new Date(s+"T00:00");d.setDate(d.getDate()+n);return iso(d)};
+function setPeriod(f,t){
+  if(f>t)[f,t]=[t,f];
+  if(addD(f,366)<t)f=addD(t,-366);
+  P.from=f;P.to=t;$("#cFrom").value=f;$("#cTo").value=t;
+  if(!$("#app").hidden)render();
+}
+const DSP=()=>DS.filter(x=>x.sold_on>=P.from&&x.sold_on<=P.to);
+document.querySelectorAll("[data-p]").forEach(b=>b.onclick=()=>{const t=today(),k=b.dataset.p;setPeriod(k==="m"?t.slice(0,8)+"01":addD(t,-(+k-1)),t)});
+$("#cFrom").onchange=$("#cTo").onchange=()=>{const f=$("#cFrom").value,t=$("#cTo").value;if(f&&t)setPeriod(f,t)};
+$("#cMet").onchange=()=>{P.met=$("#cMet").value;drawChart()};
+window.addEventListener("resize",()=>{if(!$("#app").hidden)drawChart()});
+function drawChart(){
+  const el=$("#chart"),W=Math.max(el.clientWidth,280),H=220,L=48,R=18,T=10,Bm=26,rev=P.met==="rev";
+  const days=[];for(let d=P.from;d&&d<=P.to&&days.length<=367;d=addD(d,1))days.push(d);
+  const m=new Map(DS.map(x=>[x.sold_on,x])),n=days.length;
+  const vals=days.map(d=>{const x=m.get(d);return x?Number(rev?x.pendapatan:x.botol):0});
+  const sumR=days.reduce((a,d)=>a+Number((m.get(d)||{}).pendapatan||0),0),sumB=days.reduce((a,d)=>a+Number((m.get(d)||{}).botol||0),0);
+  $("#cTot").innerHTML=`${fd(P.from)} – ${fd(P.to)} · total <b>${rp(sumR)}</b> · ${vol(sumB)}`;
+  const raw=Math.max(...vals,1)/4,mag=Math.pow(10,Math.floor(Math.log10(raw)));
+  let step=[1,2,2.5,5,10].map(k=>k*mag).find(v=>v>=raw);if(!rev)step=Math.max(1,Math.ceil(step));
+  const mx=step*4;
+  const fm=v=>rev?(v>=1e6?(v/1e6).toLocaleString("id-ID",{maximumFractionDigits:2})+" jt":v>=1e3?Math.round(v/1e3)+" rb":String(Math.round(v))):String(Math.round(v));
+  const xs=i=>n<2?L+(W-L-R)/2:L+i*(W-L-R)/(n-1),ys=v=>T+(H-T-Bm)*(1-v/mx),yb=ys(0);
+  let g="";
+  for(let k=0;k<=4;k++){const y=ys(step*k);g+=`<line x1="${L}" x2="${W-R}" y1="${y}" y2="${y}" style="stroke:var(--bd)"/><text class="axis" x="${L-6}" y="${y+3}" text-anchor="end">${fm(step*k)}</text>`}
+  const cnt=Math.max(1,Math.min(n,Math.floor((W-L-R)/62)));
+  for(let k=0;k<cnt;k++){const i=cnt===1?0:Math.round(k*(n-1)/(cnt-1)),d=days[i];g+=`<text class="axis" x="${xs(i)}" y="${H-8}" text-anchor="middle">${d.slice(8)}/${d.slice(5,7)}</text>`}
+  const pts=vals.map((v,i)=>`${xs(i).toFixed(1)},${ys(v).toFixed(1)}`);
+  const area=`M${xs(0)},${yb} L${pts.join(" L")} L${xs(n-1)},${yb} Z`;
+  g+=`<path d="${area}" style="fill:var(--ac);fill-opacity:.18"/><polyline points="${pts.join(" ")}" style="fill:none;stroke:var(--ac);stroke-width:2;stroke-linejoin:round"/>`;
+  if(n<=31)g+=vals.map((v,i)=>`<circle cx="${xs(i)}" cy="${ys(v)}" r="2.5" style="fill:var(--ac)"/>`).join("");
+  g+=`<g id="hv" style="display:none"><line id="hl" y1="${T}" y2="${yb}" style="stroke:var(--mut);stroke-dasharray:3 3"/><circle id="hc" r="5" style="fill:var(--ac);stroke:var(--card);stroke-width:2"/></g><rect id="hr" x="${L}" y="${T}" width="${W-L-R}" height="${H-T-Bm}" fill="transparent"/>`;
+  el.innerHTML=`<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${g}</svg>`;
+  const hr=$("#hr"),tip=$("#tip");
+  const show=e=>{
+    const r=el.getBoundingClientRect(),x=e.clientX-r.left;
+    const i=n<2?0:Math.max(0,Math.min(n-1,Math.round((x-L)/((W-L-R)/(n-1)))));
+    const cx=xs(i),cy=ys(vals[i]),o=m.get(days[i])||{};
+    $("#hv").style.display="";$("#hl").setAttribute("x1",cx);$("#hl").setAttribute("x2",cx);$("#hc").setAttribute("cx",cx);$("#hc").setAttribute("cy",cy);
+    tip.hidden=false;tip.innerHTML=`${fd(days[i])}<br><b>${rp(o.pendapatan||0)}</b> · ${vol(o.botol||0)}`;
+    tip.style.left=Math.min(Math.max(cx-tip.offsetWidth/2,0),W-tip.offsetWidth)+"px";tip.style.top=Math.max(cy-tip.offsetHeight-10,0)+"px";
+  };
+  hr.addEventListener("pointermove",show);hr.addEventListener("pointerdown",show);
+  hr.addEventListener("pointerleave",()=>{$("#hv").style.display="none";tip.hidden=true});
+}
+
 boot();
 </script>
 </body>
