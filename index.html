@@ -43,6 +43,7 @@ th,td{padding:8px;text-align:left;border-bottom:1px solid var(--bd)}th{font-size
 #chartWrap{position:relative}#chart svg{display:block;width:100%}
 .tip{position:absolute;pointer-events:none;background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:6px 9px;font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,.25);white-space:nowrap;z-index:2}
 .axis{fill:var(--mut);font-size:10px}
+.btn.s.e{color:var(--ac);margin-right:4px}
 </style>
 </head>
 <body>
@@ -105,6 +106,15 @@ th,td{padding:8px;text-align:left;border-bottom:1px solid var(--bd)}th{font-size
 </section>
 
 <section id="stk" hidden>
+<div class="card"><h2>Penyesuaian harga</h2>
+<div class="g">
+<div><label>Item</label><select id="pItem"></select></div>
+<div><label>Harga saat ini (sisa stok)</label><input id="pCur" disabled></div>
+<div><label>Harga baru (Rp per botol)</label><input id="pNew" type="number" min="0" step="any" inputmode="decimal"></div>
+</div>
+<button class="btn" id="pBtn">Terapkan ke semua sisa stok item ini</button>
+<div class="msg" id="pMsg"></div>
+<div class="sub" style="margin:0">Harga baru hanya berlaku untuk penjualan berikutnya. Transaksi yang sudah tercatat tidak berubah. Untuk mengubah harga satu batch saja, gunakan tombol "Ubah harga" di tabel bawah.</div></div>
 <div class="card"><h2>Stok saat ini (urut tanggal terima)</h2><div class="tb" id="stkTb"></div></div>
 </section>
 </div>
@@ -211,6 +221,36 @@ $("#oBtn").onclick=async()=>{
 };
 async function delBatch(id){if(!confirm("Hapus batch stok ini?"))return;const{error}=await sb.from("batches").delete().eq("id",id);if(error)alert(error.message);load()}
 window.delBatch=delBatch;
+async function editPrice(id){
+  const b=B.find(x=>x.id===id);if(!b)return;
+  const v=prompt(`Harga baru per botol untuk ${b.item} (saat ini ${rp(b.price)}):`,b.price);
+  if(v===null)return;
+  const p=+v.replace(/\./g,"").replace(",",".");
+  if(!(p>0))return alert("Harga tidak valid.");
+  const{error}=await sb.from("batches").update({price:p}).eq("id",b.id);
+  if(error)alert("Gagal mengubah harga: "+error.message);
+  load();
+}
+window.editPrice=editPrice;
+function priceUI(){
+  const cur=$("#pItem").value,its=itemsLive();
+  $("#pItem").innerHTML=its.length?its.map(i=>`<option ${i===cur?"selected":""}>${esc(i)}</option>`).join(""):`<option value="">— tidak ada stok —</option>`;
+  const ps=B.filter(b=>live(b)&&b.item===$("#pItem").value).map(b=>Number(b.price));
+  $("#pCur").value=ps.length?(Math.min(...ps)===Math.max(...ps)?rp(ps[0]):rp(Math.min(...ps))+" – "+rp(Math.max(...ps))):"-";
+}
+$("#pItem").addEventListener("change",priceUI);
+$("#pBtn").onclick=async()=>{
+  const item=$("#pItem").value,p=+$("#pNew").value,m=$("#pMsg");m.className="msg err";
+  if(!item)return m.textContent="Tidak ada item dengan stok.";
+  if(!(p>0))return m.textContent="Harga baru harus lebih dari 0.";
+  if(!confirm(`Ubah harga ${item} menjadi ${rp(p)}/botol untuk semua sisa stok?`))return;
+  $("#pBtn").disabled=true;
+  const{data,error}=await sb.from("batches").update({price:p}).eq("item",item).gt("remain",0).select("id");
+  $("#pBtn").disabled=false;
+  if(error)return m.textContent="Gagal mengubah harga: "+error.message;
+  if(!data.length)return m.textContent="Tidak ada stok yang diubah.";
+  $("#pNew").value="";m.className="msg okm";m.textContent=`Harga ${item} sekarang ${rp(p)}/botol (${data.length} batch diperbarui).`;load();
+};
 
 /* ---- render ---- */
 const tbl=(h,rows,empty)=>rows.length?`<table><thead><tr>${h.map(x=>`<th class="${x[0]==="#"?"r":""}">${x.replace("#","")}</th>`).join("")}</tr></thead><tbody>${rows.join("")}</tbody></table>`:`<div class="em">${empty}</div>`;
@@ -218,7 +258,7 @@ function render(){
   $("#dl").innerHTML=[...new Set(B.map(b=>b.item))].map(i=>`<option value="${esc(i)}">`).join("");
   const cur=$("#oItem").value,its=itemsLive();
   $("#oItem").innerHTML=its.length?its.map(i=>`<option ${i===cur?"selected":""}>${esc(i)}</option>`).join(""):`<option value="">— tidak ada stok —</option>`;
-  outPreview();
+  outPreview();priceUI();
   const t=today(),td=DS.find(x=>x.sold_on===t)||{botol:0,pendapatan:0};
   const totB=DS.reduce((s,x)=>s+x.botol,0),totR=DS.reduce((s,x)=>s+Number(x.pendapatan),0);
   const stock=B.filter(live).reduce((s,b)=>s+b.remain,0);
@@ -229,7 +269,7 @@ function render(){
   $("#outHist").innerHTML=tbl(["Waktu","Item","#Botol","#Harga"],S.map(s=>`<tr><td>${fd(s.sold_on)} ${new Date(s.created_at).toLocaleTimeString("id-ID",{hour:"2-digit",minute:"2-digit"})}</td><td>${esc(s.item)}</td><td class="r">${vol(s.qty)}</td><td class="r">${rp(s.total)}</td></tr>`),"Belum ada transaksi.");
   $("#stkTb").innerHTML=tbl(["Item","Tgl terima","#Sisa","#Harga/botol","Status",""],B.map(b=>{
     const st=b.remain<=0?'<span class="tag">habis</span>':'<span class="tag">tersedia</span>';
-    return `<tr><td>${esc(b.item)}</td><td>${fd(b.received_on)}</td><td class="r">${vol(b.remain)}</td><td class="r">${rp(b.price)}</td><td>${st}</td><td class="r"><button class="btn s" onclick="delBatch('${b.id}')">Hapus</button></td></tr>`}),"Belum ada stok.");
+    return `<tr><td>${esc(b.item)}</td><td>${fd(b.received_on)}</td><td class="r">${vol(b.remain)}</td><td class="r">${rp(b.price)}</td><td>${st}</td><td class="r"><button class="btn s e" onclick="editPrice('${b.id}')">Ubah harga</button><button class="btn s" onclick="delBatch('${b.id}')">Hapus</button></td></tr>`}),"Belum ada stok.");
 }
 /* ---- grafik area + filter periode ---- */
 let P={from:"",to:"",met:"rev"};
